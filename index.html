@@ -36,6 +36,8 @@ h2{text-align:center;color:#ffe62e;margin-bottom:18px}
 .hud-top-left{position:absolute;top:14px;left:14px}
 .hud-position{font-size:1.8rem;color:#ffe62e;text-shadow:0 0 10px rgba(255,230,46,0.6)}
 .hud-lap{font-size:0.85rem;color:#eaf6ff;opacity:0.85}
+.hud-wrongway{font-size:0.9rem;color:#ff2e88;text-shadow:0 0 8px #ff2e88;margin-top:4px;opacity:0;transition:opacity 0.15s}
+.hud-wrongway.show{opacity:1}
 .hud-top-right{position:absolute;top:14px;right:14px}
 .hud-time{font-size:1.3rem;color:#2ef2ff;text-shadow:0 0 8px rgba(46,242,255,0.6);font-variant-numeric:tabular-nums}
 .hud-bottom-left{position:absolute;bottom:14px;left:14px}
@@ -70,18 +72,18 @@ h2{text-align:center;color:#ffe62e;margin-bottom:18px}
 </head>
 <body>
 
-<!-- ====== MENÚ PRINCIPAL ====== -->
+<!-- ====== MENU PRINCIPAL ====== -->
 <section id="screen-main" class="screen active">
   <div class="menu-panel">
     <h1>NEON RUSH<small>STREET LEGENDS</small></h1>
     <button class="menu-btn" data-action="quick">🏁 CARRERA RÁPIDA</button>
     <button class="menu-btn" data-action="records">🏆 RÉCORDS</button>
     <button class="menu-btn" data-action="settings">⚙️ CONFIGURACIÓN</button>
-    <p class="version">v2.0 · ¡A correr!</p>
+    <p class="version">v3.0 · reconstruido · ¡A correr!</p>
   </div>
 </section>
 
-<!-- ====== CARRERA RÁPIDA ====== -->
+<!-- ====== CARRERA RAPIDA ====== -->
 <section id="screen-quick" class="screen">
   <div class="menu-panel">
     <h2>🏁 CARRERA RÁPIDA</h2>
@@ -133,7 +135,7 @@ h2{text-align:center;color:#ffe62e;margin-bottom:18px}
   </div>
 </section>
 
-<!-- ====== RÉCORDS ====== -->
+<!-- ====== RECORDS ====== -->
 <section id="screen-records" class="screen">
   <div class="menu-panel">
     <h2>🏆 RÉCORDS</h2>
@@ -142,7 +144,7 @@ h2{text-align:center;color:#ffe62e;margin-bottom:18px}
   </div>
 </section>
 
-<!-- ====== CONFIGURACIÓN ====== -->
+<!-- ====== CONFIGURACION ====== -->
 <section id="screen-settings" class="screen">
   <div class="menu-panel">
     <h2>⚙️ CONFIGURACIÓN</h2>
@@ -171,7 +173,11 @@ h2{text-align:center;color:#ffe62e;margin-bottom:18px}
   <canvas id="game-canvas"></canvas>
   <div id="countdown-overlay" class="overlay hidden"><div id="countdown-number">3</div></div>
   <div id="hud" class="hud hidden">
-    <div class="hud-top-left"><div class="hud-position" id="hud-pos">1º</div><div class="hud-lap" id="hud-lap">VUELTA 1/3</div></div>
+    <div class="hud-top-left">
+      <div class="hud-position" id="hud-pos">1º</div>
+      <div class="hud-lap" id="hud-lap">VUELTA 1/3</div>
+      <div class="hud-wrongway" id="hud-wrongway">⚠ SENTIDO CONTRARIO</div>
+    </div>
     <div class="hud-top-right"><div class="hud-time" id="hud-time">00:00.00</div></div>
     <div class="hud-bottom-left"><canvas id="minimap" width="150" height="150"></canvas></div>
     <div class="hud-bottom-right">
@@ -208,8 +214,25 @@ h2{text-align:center;color:#ffe62e;margin-bottom:18px}
 
 <script>
 // ============================================================
-// NEON RUSH - STREET LEGENDS - CÓDIGO COMPLETO CORREGIDO
-// FIX: Sistema de vueltas y detección de ganador
+// NEON RUSH - STREET LEGENDS - RECONSTRUIDO DESDE CERO (v3.0)
+//
+// Cambios respecto a la versión anterior:
+// 1. Persistencia migrada de localStorage (no soportado aquí) a
+//    window.storage con fallback en memoria si no existe.
+// 2. Bug de vuelta: se eliminó la validación "checkpointsPassed"
+//    que nunca podía fallar (código muerto). La vuelta ahora se
+//    cuenta simplemente cuando nextCheckpoint vuelve a 0.
+// 3. "wrongWay" ahora se USA de verdad: penaliza velocidad y se
+//    muestra un aviso en el HUD, en vez de ser una bandera muerta.
+// 4. Las 3 pistas se reconstruyeron para que sean curvas cerradas
+//    SIN auto-intersección (la pista "Desierto" anterior era una
+//    lemniscata en forma de 8 que confundía el sistema de
+//    checkpoints al cruzarse consigo misma).
+// 5. El motor de audio se detiene explícitamente antes de volver
+//    a arrancar (reinicio/pausa ya no deja osciladores huérfanos).
+// 6. El minimapa precalcula sus límites y escala UNA vez al
+//    construir la pista, en vez de recorrer todos los puntos cada
+//    frame.
 // ============================================================
 
 // ---------- TUS CORREDORES ----------
@@ -221,7 +244,7 @@ const TUS_CORREDORES = [
   'JOHASN'
 ];
 
-// ---------- DATOS DE VEHÍCULOS ----------
+// ---------- DATOS DE VEHICULOS ----------
 const VEHICLES = [
   {id:'vortex',name:'Vortex R7',color:'#2ef2ff',stats:{topSpeed:78,acceleration:55,braking:60,grip:55,handling:60,weight:50,power:70,nitro:60,driftAbility:55}},
   {id:'phantom',name:'Phantom GT',color:'#a63bff',stats:{topSpeed:92,acceleration:40,braking:45,grip:40,handling:35,weight:70,power:88,nitro:55,driftAbility:30}},
@@ -236,10 +259,38 @@ const VEHICLES = [
 ];
 
 // ---------- PISTAS ----------
+// Las 3 pistas ahora son r(theta) = radioBase + ondulaciones, siempre
+// positivo y sin cruces consigo mismas (a diferencia de la lemniscata
+// original de "Desierto"). Esto garantiza que nearestTrackIndex nunca
+// pueda "saltar" a otra rama del circuito.
 const TRACKS = [
-  {id:'neon',name:'Circuito Neon',w:240,build:()=>{const p=[];for(let i=0;i<120;i++){const t=(i/120)*Math.PI*2;p.push({x:Math.cos(t)*900,y:Math.sin(t)*600});}return p;}},
-  {id:'harbor',name:'Puerto',w:210,build:()=>{const p=[];for(let i=0;i<120;i++){const t=(i/120)*Math.PI*2;p.push({x:Math.cos(t)*1100,y:Math.sin(t)*400});}return p;}},
-  {id:'desert',name:'Desierto',w:260,build:()=>{const p=[];for(let i=0;i<140;i++){const t=(i/140)*Math.PI*2;p.push({x:Math.sin(t)*950,y:Math.sin(t)*Math.cos(t)*850});}return p;}}
+  {id:'neon',name:'Circuito Neon',w:240,build:()=>{
+    const p=[];
+    for(let i=0;i<160;i++){
+      const t=(i/160)*Math.PI*2;
+      const r = 750 + Math.sin(t*3)*70;
+      p.push({x:Math.cos(t)*r, y:Math.sin(t)*r*0.68});
+    }
+    return p;
+  }},
+  {id:'harbor',name:'Puerto',w:210,build:()=>{
+    const p=[];
+    for(let i=0;i<160;i++){
+      const t=(i/160)*Math.PI*2;
+      const r = 900 + Math.sin(t*2)*90;
+      p.push({x:Math.cos(t)*r, y:Math.sin(t)*r*0.42});
+    }
+    return p;
+  }},
+  {id:'desert',name:'Desierto',w:250,build:()=>{
+    const p=[];
+    for(let i=0;i<170;i++){
+      const t=(i/170)*Math.PI*2;
+      const r = 820 + Math.sin(t*4)*60 + Math.cos(t*2)*50;
+      p.push({x:Math.cos(t)*r, y:Math.sin(t)*r*0.6});
+    }
+    return p;
+  }}
 ];
 
 const DIFFS=['FÁCIL','NORMAL','DIFÍCIL','EXPERTO','LEYENDA'];
@@ -247,30 +298,40 @@ const RIVALS=[1,2,3,4,5,6,7];
 const LAPS=[1,2,3,5];
 
 // ---------- GUARDADO ----------
-function loadSave(){
-  try {
-    const d = localStorage.getItem('neonrush_save');
-    if(d) {
-      const parsed = JSON.parse(d);
-      if(parsed && typeof parsed === 'object' && parsed.records) {
-        return parsed;
-      }
-    }
-  } catch(e) {
-    console.warn('Error cargando datos:', e);
-  }
+// window.storage es asíncrono y solo existe cuando el juego corre
+// como artifact en Claude.ai. Si no está disponible (por ejemplo al
+// abrir el archivo .html suelto en un navegador), se usa un estado
+// en memoria: el juego funciona igual, solo no persiste entre
+// sesiones.
+function defaultSave(){
   return { sound: true, touch: 'auto', records: { lap: {}, topSpeed: 0, bestDrift: 0, wins: 0, streak: 0 } };
 }
 
-function saveData(d){
+let SAVE = defaultSave();
+const hasStorage = typeof window !== 'undefined' && !!window.storage;
+
+async function loadSave(){
+  if(!hasStorage) return defaultSave();
   try {
-    localStorage.setItem('neonrush_save', JSON.stringify(d));
+    const result = await window.storage.get('neonrush_save', false);
+    if(result && result.value){
+      const parsed = JSON.parse(result.value);
+      if(parsed && typeof parsed === 'object' && parsed.records) return parsed;
+    }
+  } catch(e) {
+    console.warn('No se pudo cargar el guardado, usando valores por defecto:', e);
+  }
+  return defaultSave();
+}
+
+async function saveData(d){
+  if(!hasStorage) return;
+  try {
+    await window.storage.set('neonrush_save', JSON.stringify(d), false);
   } catch(e) {
     console.warn('Error guardando datos:', e);
   }
 }
-
-let SAVE = loadSave();
 
 // ---------- ESTADO ----------
 let vehicleIndex = 0;
@@ -299,7 +360,7 @@ window.addEventListener('resize', resizeCanvas);
 // ---------- AUDIO ----------
 const audio = {
   ctx: null,
-  enabled: SAVE.sound,
+  enabled: true,
   osc: null,
   gain: null,
   filter: null,
@@ -321,7 +382,7 @@ const audio = {
 
   setEnabled(v) {
     this.enabled = v;
-    if(!v && this.gain) this.gain.gain.value = 0;
+    if(!v) this.stopEngine();
   },
 
   tone(freq, duration, type, gainVal, sweepTo, delay) {
@@ -344,7 +405,7 @@ const audio = {
   noise(duration, gainVal, filterFreq) {
     if(!this.enabled) return;
     this.ensure();
-    const bufferSize = this.ctx.sampleRate * (duration || 0.2);
+    const bufferSize = Math.max(1, Math.floor(this.ctx.sampleRate * (duration || 0.2)));
     const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
     const data = buffer.getChannelData(0);
     for(let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
@@ -361,7 +422,8 @@ const audio = {
   },
 
   startEngine() {
-    if(!this.enabled || this.osc) return;
+    this.stopEngine(); // asegura que nunca queden osciladores huérfanos de una carrera anterior
+    if(!this.enabled) return;
     this.ensure();
     const osc = this.ctx.createOscillator();
     osc.type = 'sawtooth';
@@ -412,13 +474,12 @@ const audio = {
   lose() { [400,340,260].forEach((f,i) => this.tone(f, 0.3, 'sawtooth', 0.15, null, i * 0.15)); }
 };
 
-// ---------- PARTÍCULAS ----------
+// ---------- PARTICULAS ----------
 const particles = {
   list: [],
   max: 400,
 
   add(p) {
-    this.list = this.list.filter(part => part.age < part.life);
     if(this.list.length >= this.max) this.list.shift();
     this.list.push(p);
   },
@@ -480,6 +541,8 @@ const particles = {
     }
   },
 
+  clear() { this.list.length = 0; },
+
   draw(ctx) {
     for(const p of this.list) {
       const alpha = Math.max(0, 1 - p.age / p.life);
@@ -491,7 +554,7 @@ const particles = {
   }
 };
 
-// ---------- FÍSICA ----------
+// ---------- FISICA ----------
 function statsToPhys(s) {
   return {
     maxSpeed: 260 + s.topSpeed * 5.4,
@@ -526,7 +589,7 @@ function createBody(x, y, angle, stats) {
 function updatePhysics(body, input, dt, surface) {
   const phys = body.physics;
   const surf = surface || { grip: 1 };
-  
+
   if(body.damage >= 100) {
     input = { throttle: 0, brake: 0, steer: 0, handbrake: false, nitro: false };
   }
@@ -535,7 +598,6 @@ function updatePhysics(body, input, dt, surface) {
   const right = { x: -forward.y, y: forward.x };
 
   const forwardSpeed = body.vx * forward.x + body.vy * forward.y;
-  const lateralSpeed = body.vx * right.x + body.vy * right.y;
 
   body.nitroActive = input.nitro && body.nitroFuel > 1 && body.damage < 100;
   if(body.nitroActive) {
@@ -635,14 +697,14 @@ function resolveCollision(a, b, radius) {
   const relVx = b.vx - a.vx;
   const relVy = b.vy - a.vy;
   const relSpeed = relVx * nx + relVy * ny;
-  
+
   if(relSpeed < 0) {
     const impulse = -relSpeed * 0.6;
     a.vx -= nx * impulse * aPush;
     a.vy -= ny * impulse * aPush;
     b.vx += nx * impulse * bPush;
     b.vy += ny * impulse * bPush;
-    
+
     const impactSpeed = Math.abs(relSpeed);
     const damageThisHit = Math.min(3.5, impactSpeed * 0.0015);
     a.damage = Math.min(100, a.damage + damageThisHit);
@@ -651,7 +713,7 @@ function resolveCollision(a, b, radius) {
   return true;
 }
 
-// ---------- VEHÍCULO ----------
+// ---------- VEHICULO ----------
 let vehicleUID = 0;
 
 class Vehicle {
@@ -662,6 +724,8 @@ class Vehicle {
     this.driverName = driverName || def.name;
     this.body = createBody(x, y, angle, def.stats);
     this.progress = null;
+    this._lightCache = {};
+    this._darkCache = {};
   }
 
   get x() { return this.body.x; }
@@ -687,9 +751,9 @@ class Vehicle {
     ctx.fillRect(-len/2 + 2, -wid/2 + 3, len, wid);
 
     const grad = ctx.createLinearGradient(-len/2, -wid/2, len/2, wid/2);
-    grad.addColorStop(0, this._lightenColor(color, 30));
+    grad.addColorStop(0, this._lighten(color, 30));
     grad.addColorStop(0.5, color);
-    grad.addColorStop(1, this._darkenColor(color, 30));
+    grad.addColorStop(1, this._darken(color, 30));
     ctx.fillStyle = grad;
     ctx.strokeStyle = 'rgba(255,255,255,0.4)';
     ctx.lineWidth = 1.5;
@@ -728,20 +792,28 @@ class Vehicle {
     ctx.restore();
   }
 
-  _lightenColor(color, amount) {
+  // Los colores claros/oscuros se cachean por vehículo: antes se
+  // recalculaban con parseInt/toString en CADA frame para CADA coche.
+  _lighten(color, amount) {
+    if(this._lightCache[amount]) return this._lightCache[amount];
     const hex = color.replace('#', '');
     const r = Math.min(255, parseInt(hex.substr(0,2), 16) + amount);
     const g = Math.min(255, parseInt(hex.substr(2,2), 16) + amount);
     const b = Math.min(255, parseInt(hex.substr(4,2), 16) + amount);
-    return '#' + [r,g,b].map(c => c.toString(16).padStart(2, '0')).join('');
+    const out = '#' + [r,g,b].map(c => c.toString(16).padStart(2, '0')).join('');
+    this._lightCache[amount] = out;
+    return out;
   }
 
-  _darkenColor(color, amount) {
+  _darken(color, amount) {
+    if(this._darkCache[amount]) return this._darkCache[amount];
     const hex = color.replace('#', '');
     const r = Math.max(0, parseInt(hex.substr(0,2), 16) - amount);
     const g = Math.max(0, parseInt(hex.substr(2,2), 16) - amount);
     const b = Math.max(0, parseInt(hex.substr(4,2), 16) - amount);
-    return '#' + [r,g,b].map(c => c.toString(16).padStart(2, '0')).join('');
+    const out = '#' + [r,g,b].map(c => c.toString(16).padStart(2, '0')).join('');
+    this._darkCache[amount] = out;
+    return out;
   }
 }
 
@@ -760,6 +832,22 @@ function buildTrack(def) {
   for(let i = 0; i < 8; i++) {
     checkpoints.push(Math.floor((i / 8) * N));
   }
+
+  // Limites del minimapa precalculados UNA sola vez (antes se
+  // recorrían todos los puntos en cada frame dentro del bucle
+  // principal).
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for(const p of points) {
+    if(p.x < minX) minX = p.x; if(p.x > maxX) maxX = p.x;
+    if(p.y < minY) minY = p.y; if(p.y > maxY) maxY = p.y;
+  }
+  const pad = 40;
+  const w = maxX - minX + pad * 2;
+  const h = maxY - minY + pad * 2;
+  const mapScale = Math.min(150 / w, 150 / h);
+  const mapOffX = 75 - ((minX + maxX) / 2) * mapScale;
+  const mapOffY = 75 - ((minY + maxY) / 2) * mapScale;
+
   return {
     id: def.id,
     name: def.name,
@@ -770,7 +858,8 @@ function buildTrack(def) {
     totalLength: totalLength,
     checkpoints: checkpoints,
     startPoint: points[0],
-    startDirection: Math.atan2(points[1].y - points[0].y, points[1].x - points[0].x)
+    startDirection: Math.atan2(points[1].y - points[0].y, points[1].x - points[0].x),
+    mapScale, mapOffX, mapOffY
   };
 }
 
@@ -778,8 +867,8 @@ function nearestTrackIndex(track, x, y, hint) {
   const { points, N } = track;
   let start = 0, end = N;
   if(hint >= 0) {
-    start = Math.max(0, hint - 12);
-    end = Math.min(N, hint + 12);
+    start = hint - 12;
+    end = hint + 12;
   }
   let best = 0;
   let bestDist = Infinity;
@@ -843,7 +932,7 @@ function drawTrack(ctx, track) {
   ctx.restore();
 }
 
-// ---------- PROGRESO (CORREGIDO) ----------
+// ---------- PROGRESO ----------
 function createProgress(track) {
   return {
     trackIndexHint: 0,
@@ -854,8 +943,7 @@ function createProgress(track) {
     lapTimes: [],
     currentLapStart: 0,
     totalProgress: 0,
-    wrongWay: false,
-    checkpointsPassed: 0  // Añadido para contar checkpoints
+    wrongWay: false
   };
 }
 
@@ -866,44 +954,33 @@ function updateProgress(track, progress, x, y, elapsed, totalLaps) {
   const arc = index / track.N;
   progress.totalProgress = progress.lap + arc;
 
-  // Verificar dirección
+  // Deteccion de sentido contrario: si estamos mas cerca del
+  // checkpoint anterior que del siguiente, vamos al reves.
   const cpIndex = track.checkpoints[progress.nextCheckpoint];
   const cpPoint = track.points[cpIndex];
   const prevCpIndex = track.checkpoints[(progress.nextCheckpoint - 1 + track.checkpoints.length) % track.checkpoints.length];
   const prevCpPoint = track.points[prevCpIndex];
-  
+
   const distToCurrent = Math.hypot(x - cpPoint.x, y - cpPoint.y);
   const distToPrev = Math.hypot(x - prevCpPoint.x, y - prevCpPoint.y);
-  
-  if(distToPrev < distToCurrent && distToPrev < 120) {
-    progress.wrongWay = true;
-    return progress;
-  }
-  progress.wrongWay = false;
 
-  // Checkpoint
-  if(distToCurrent < 150) {
+  progress.wrongWay = distToPrev < distToCurrent && distToPrev < 120;
+
+  // Checkpoint: la vuelta se cuenta cuando volvemos a pasar por el
+  // checkpoint 0 tras haber recorrido todos los demas en orden.
+  if(!progress.wrongWay && distToCurrent < 150) {
     progress.nextCheckpoint = (progress.nextCheckpoint + 1) % track.checkpoints.length;
-    progress.checkpointsPassed += 1;
 
-    // Vuelta completada cuando pasamos el checkpoint 0 (línea de meta)
     if(progress.nextCheckpoint === 0) {
-      // Verificar que pasó por TODOS los checkpoints
-      if(progress.checkpointsPassed >= track.checkpoints.length) {
-        const lapTime = elapsed - progress.currentLapStart;
-        progress.lapTimes.push(lapTime);
-        progress.currentLapStart = elapsed;
-        progress.lap += 1;
-        progress.checkpointsPassed = 0;
-        progress.totalProgress = progress.lap + arc;
+      const lapTime = elapsed - progress.currentLapStart;
+      progress.lapTimes.push(lapTime);
+      progress.currentLapStart = elapsed;
+      progress.lap += 1;
+      progress.totalProgress = progress.lap + arc;
 
-        console.log('🏁 Vuelta completada:', progress.lap, 'de', totalLaps);
-
-        if(progress.lap >= totalLaps && !progress.finished) {
-          progress.finished = true;
-          progress.finishTime = elapsed;
-          console.log('🏆 Carrera terminada!');
-        }
+      if(progress.lap >= totalLaps && !progress.finished) {
+        progress.finished = true;
+        progress.finishTime = elapsed;
       }
     }
   }
@@ -912,7 +989,7 @@ function updateProgress(track, progress, x, y, elapsed, totalLaps) {
 }
 
 // ---------- IA ----------
-function aiInput(vehicle, track, difficulty, dt, rivals) {
+function aiInput(vehicle, track, difficulty) {
   const lookAhead = difficulty === 'FÁCIL' ? 5 : difficulty === 'NORMAL' ? 6 : difficulty === 'DIFÍCIL' ? 7 : difficulty === 'EXPERTO' ? 8 : 9;
   const skill = difficulty === 'FÁCIL' ? 0.55 : difficulty === 'NORMAL' ? 0.7 : difficulty === 'DIFÍCIL' ? 0.82 : difficulty === 'EXPERTO' ? 0.92 : 1.0;
 
@@ -955,7 +1032,7 @@ function aiInput(vehicle, track, difficulty, dt, rivals) {
   return { throttle, brake, steer, handbrake, nitro };
 }
 
-// ---------- CARRERA (CORREGIDA) ----------
+// ---------- CARRERA ----------
 class RaceManager {
   constructor(config) {
     this.track = buildTrack(config.track);
@@ -968,7 +1045,6 @@ class RaceManager {
     this.vehicles = [];
     this.standings = [];
     this.player = null;
-    this.raceFinished = false;
     this.finishTime = 0;
 
     const playerDef = VEHICLES[config.vehicleIndex];
@@ -999,7 +1075,7 @@ class RaceManager {
       const offsetSide = side * 34;
       const sx = start.x - Math.cos(startAngle) * offsetBack + normal.x * offsetSide;
       const sy = start.y - Math.sin(startAngle) * offsetBack + normal.y * offsetSide;
-      
+
       const nombre = TUS_CORREDORES[i % TUS_CORREDORES.length];
       const rival = new Vehicle({
         def: def,
@@ -1015,7 +1091,7 @@ class RaceManager {
   }
 
   update(dt, playerInput, surface) {
-    this.particlesRequests = [];
+    this.particlesRequests.length = 0;
 
     if(this.state === 'COUNTDOWN') {
       this.countdown -= dt;
@@ -1031,8 +1107,12 @@ class RaceManager {
       let input;
       if(v.isPlayer) {
         input = playerInput;
+        // Sentido contrario penaliza: como si condujeras sobre grava.
+        if(v.progress.wrongWay) {
+          input = { ...input, throttle: input.throttle * 0.4 };
+        }
       } else {
-        input = aiInput(v, this.track, this.difficulty, dt, this.vehicles);
+        input = aiInput(v, this.track, this.difficulty);
       }
       v.update(input, dt, surface || { grip: 1 });
 
@@ -1049,7 +1129,7 @@ class RaceManager {
       }
     }
 
-    // Colisiones vehículo-vehículo
+    // Colisiones vehiculo-vehiculo
     for(let i = 0; i < this.vehicles.length; i++) {
       for(let j = i + 1; j < this.vehicles.length; j++) {
         if(resolveCollision(this.vehicles[i].body, this.vehicles[j].body)) {
@@ -1091,7 +1171,7 @@ class RaceManager {
       updateProgress(this.track, v.progress, v.x, v.y, this.elapsed, this.laps);
     }
 
-    // Clasificación
+    // Clasificacion
     const finished = this.vehicles.filter(v => v.progress.finished);
     const racing = this.vehicles.filter(v => !v.progress.finished);
 
@@ -1100,24 +1180,11 @@ class RaceManager {
 
     this.standings = [...finished, ...racing];
 
-    // Fin de carrera - CORREGIDO
-    if(this.state !== 'FINISHED') {
-      // El jugador terminó
-      if(this.player.progress.finished) {
-        this.state = 'FINISHED';
-        this.finishTime = this.player.progress.finishTime;
-        console.log('🏆 ¡CARRERA TERMINADA! Ganador: Jugador');
-      }
-      
-      // Si todos los vehículos terminaron, también termina
-      const allFinished = this.vehicles.every(v => v.progress.finished);
-      if(allFinished && this.vehicles.length > 0) {
-        this.state = 'FINISHED';
-        if(!this.finishTime) {
-          this.finishTime = this.elapsed;
-        }
-        console.log('🏆 ¡CARRERA TERMINADA! Todos terminaron');
-      }
+    // Fin de carrera: termina apenas el jugador cruza la meta (no
+    // hace falta esperar a que las IAs terminen tambien).
+    if(this.state !== 'FINISHED' && this.player.progress.finished) {
+      this.state = 'FINISHED';
+      this.finishTime = this.player.progress.finishTime;
     }
   }
 
@@ -1176,7 +1243,7 @@ function renderRecords() {
   list.innerHTML += `<div class="record-row"><span>🏁 Victorias</span><span>${SAVE.records.wins}</span></div>`;
 }
 
-// ---------- MENÚ ----------
+// ---------- MENU ----------
 document.querySelectorAll('[data-action]').forEach(btn => {
   btn.addEventListener('click', () => {
     const action = btn.dataset.action;
@@ -1240,11 +1307,13 @@ document.querySelectorAll('.arrow-btn').forEach(btn => {
     } else if(parent.id === 'sel-laps') {
       lapIndex = (lapIndex + dir + LAPS.length) % LAPS.length;
     }
-    updateSetup();
+    if(parent.id === 'sel-vehicle' || parent.id === 'sel-track' || parent.id === 'sel-diff' || parent.id === 'sel-rivals' || parent.id === 'sel-laps') {
+      updateSetup();
+    }
   });
 });
 
-// Configuración
+// Configuracion
 document.querySelectorAll('#toggle-sound .arrow-btn').forEach(b => {
   b.addEventListener('click', () => {
     SAVE.sound = !SAVE.sound;
@@ -1286,7 +1355,7 @@ const touchState = { left: false, right: false, accel: false, brake: false, hand
   const el = document.getElementById(id);
   if(!el) return;
   const key = id === 'btn-left' ? 'left' : id === 'btn-right' ? 'right' : id === 'btn-accel' ? 'accel' : id === 'btn-brake' ? 'brake' : id === 'btn-handbrake' ? 'handbrake' : 'nitro';
-  
+
   el.addEventListener('touchstart', e => { e.preventDefault(); touchState[key] = true; });
   el.addEventListener('touchend', e => { e.preventDefault(); touchState[key] = false; });
   el.addEventListener('touchcancel', () => { touchState[key] = false; });
@@ -1300,7 +1369,7 @@ function getInput() {
   const right = keys.has('KeyD') || keys.has('ArrowRight') || touchState.right;
   const up = keys.has('KeyW') || keys.has('ArrowUp') || touchState.accel;
   const down = keys.has('KeyS') || keys.has('ArrowDown') || touchState.brake;
-  
+
   return {
     throttle: up ? 1 : 0,
     brake: down ? 1 : 0,
@@ -1316,7 +1385,6 @@ function applyTouchControls() {
   const setting = SAVE.touch;
   tc.classList.toggle('hidden', !((setting === 'ON') || (setting !== 'OFF' && coarse)));
 }
-applyTouchControls();
 
 // ---------- CARRERA ----------
 function startRace() {
@@ -1333,6 +1401,7 @@ function startRace() {
     countdownInterval = null;
   }
 
+  particles.clear();
   race = new RaceManager(lastConfig);
   paused = false;
   ended = false;
@@ -1341,7 +1410,9 @@ function startRace() {
   document.getElementById('hud').classList.remove('hidden');
   document.getElementById('countdown-overlay').classList.remove('hidden');
   document.getElementById('btn-pause').classList.remove('hidden');
+  document.getElementById('hud-wrongway').classList.remove('show');
   showScreen('screen-race');
+  applyTouchControls();
 
   audio.unlock();
   audio.startEngine();
@@ -1369,7 +1440,8 @@ function startRace() {
     cancelAnimationFrame(animId);
     animId = null;
   }
-  gameLoop();
+  lastTime = 0;
+  animId = requestAnimationFrame(gameLoop);
 }
 
 function endRace() {
@@ -1383,10 +1455,6 @@ function endRace() {
   document.getElementById('touch-controls').classList.add('hidden');
   showScreen('screen-main');
   race = null;
-  if(animId) {
-    cancelAnimationFrame(animId);
-    animId = null;
-  }
 }
 
 function showResults() {
@@ -1420,7 +1488,7 @@ function showResults() {
     list.appendChild(row);
   });
 
-  // Guardar récords
+  // Guardar records
   if(bestLap > 0) {
     if(!SAVE.records.lap[race.track.id] || bestLap < SAVE.records.lap[race.track.id]) {
       SAVE.records.lap[race.track.id] = bestLap;
@@ -1447,133 +1515,128 @@ function showResults() {
 let lastTime = 0;
 
 function gameLoop(time = 0) {
-  let dt = (time - lastTime) / 1000;
-  dt = Math.max(0.001, Math.min(0.05, dt));
-  lastTime = time || performance.now();
+  animId = requestAnimationFrame(gameLoop);
 
-  if(race && document.getElementById('screen-race').classList.contains('active')) {
-    const input = getInput();
-
-    if(!paused && race.state !== 'FINISHED') {
-      race.update(dt, input, { grip: 1 });
-
-      for(const req of race.particlesRequests) {
-        if(req.type === 'smoke') {
-          for(let i = 0; i < 3; i++) {
-            particles.smoke(req.x + (Math.random() - 0.5) * 10, req.y + (Math.random() - 0.5) * 10);
-          }
-        } else if(req.type === 'nitro') {
-          for(let i = 0; i < 5; i++) {
-            particles.flame(req.x, req.y, req.angle);
-          }
-        } else if(req.type === 'spark') {
-          for(let i = 0; i < 8; i++) {
-            particles.spark(req.x, req.y);
-          }
-        }
-      }
-      particles.update(dt);
-
-      const speedRatio = Math.abs(race.player.body.speed) / race.player.body.physics.maxSpeed;
-      audio.updateEngine(speedRatio);
-      if(race.player.body.isDrifting && Math.random() < 0.15) audio.drift();
-      if(race.player.body.nitroActive && Math.random() < 0.03) audio.nitro();
-    }
-
-    if(!paused) {
-      const player = race.player;
-      const zoom = Math.min(1.2, 0.6 + player.speedKmh / 500);
-
-      ctx.save();
-      ctx.fillStyle = '#06060c';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.translate(canvas.width / 2, canvas.height / 2);
-      ctx.rotate(-player.angle - Math.PI / 2);
-      ctx.scale(zoom, zoom);
-      ctx.translate(-player.x, -player.y);
-
-      drawTrack(ctx, race.track);
-      particles.draw(ctx);
-
-      const sorted = [...race.vehicles].sort((a, b) => a.y - b.y);
-      for(const v of sorted) v.draw(ctx);
-
-      ctx.restore();
-
-      const pos = race.getPlayerPosition();
-      document.getElementById('hud-pos').textContent = pos + 'º';
-      document.getElementById('hud-lap').textContent = `VUELTA ${Math.min(race.player.progress.lap + 1, race.laps)}/${race.laps}`;
-
-      const m = Math.floor(race.elapsed / 60);
-      const s = Math.floor(race.elapsed % 60);
-      const ms = Math.floor((race.elapsed % 1) * 100);
-      document.getElementById('hud-time').textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(2, '0')}`;
-
-      document.getElementById('hud-speed').textContent = Math.round(race.player.speedKmh);
-      document.getElementById('hud-nitro').style.width = race.player.body.nitroFuel + '%';
-      document.getElementById('hud-damage').style.width = race.player.body.damage + '%';
-
-      const mc = document.getElementById('minimap');
-      const mctx = mc.getContext('2d');
-      const track = race.track;
-      const pts = track.points;
-
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      for(const p of pts) {
-        if(p.x < minX) minX = p.x; if(p.x > maxX) maxX = p.x;
-        if(p.y < minY) minY = p.y; if(p.y > maxY) maxY = p.y;
-      }
-      const pad = 40;
-      const w = maxX - minX + pad * 2;
-      const h = maxY - minY + pad * 2;
-      const scale = Math.min(150 / w, 150 / h);
-      const offX = 75 - ((minX + maxX) / 2) * scale;
-      const offY = 75 - ((minY + maxY) / 2) * scale;
-
-      mctx.clearRect(0, 0, 150, 150);
-      mctx.save();
-      mctx.strokeStyle = 'rgba(46,242,255,0.7)';
-      mctx.lineWidth = 2.5;
-      mctx.beginPath();
-      pts.forEach((p, i) => {
-        const x = p.x * scale + offX;
-        const y = p.y * scale + offY;
-        i === 0 ? mctx.moveTo(x, y) : mctx.lineTo(x, y);
-      });
-      mctx.closePath();
-      mctx.stroke();
-
-      for(const v of race.vehicles) {
-        mctx.fillStyle = v.isPlayer ? '#ffe62e' : '#ff2e88';
-        const x = v.x * scale + offX;
-        const y = v.y * scale + offY;
-        mctx.beginPath();
-        mctx.arc(x, y, v.isPlayer ? 5 : 3.5, 0, Math.PI * 2);
-        mctx.fill();
-      }
-      mctx.restore();
-    }
-
-    // Verificar fin de carrera - CORREGIDO
-    if(race.state === 'FINISHED' && !ended) {
-      console.log('🏁 Mostrando resultados...');
-      showResults();
-    }
+  if(!race || !document.getElementById('screen-race').classList.contains('active')) {
+    return;
   }
 
-  animId = requestAnimationFrame(gameLoop);
+  let dt = lastTime ? (time - lastTime) / 1000 : 0;
+  dt = Math.max(0, Math.min(0.05, dt));
+  lastTime = time;
+
+  const input = getInput();
+
+  if(!paused && race.state !== 'FINISHED') {
+    race.update(dt, input, { grip: 1 });
+
+    for(const req of race.particlesRequests) {
+      if(req.type === 'smoke') {
+        for(let i = 0; i < 3; i++) {
+          particles.smoke(req.x + (Math.random() - 0.5) * 10, req.y + (Math.random() - 0.5) * 10);
+        }
+      } else if(req.type === 'nitro') {
+        for(let i = 0; i < 5; i++) {
+          particles.flame(req.x, req.y, req.angle);
+        }
+      } else if(req.type === 'spark') {
+        for(let i = 0; i < 8; i++) {
+          particles.spark(req.x, req.y);
+        }
+      }
+    }
+    particles.update(dt);
+
+    const speedRatio = Math.abs(race.player.body.speed) / race.player.body.physics.maxSpeed;
+    audio.updateEngine(speedRatio);
+    if(race.player.body.isDrifting && Math.random() < 0.15) audio.drift();
+    if(race.player.body.nitroActive && Math.random() < 0.03) audio.nitro();
+  }
+
+  if(!paused) {
+    const player = race.player;
+    const zoom = Math.min(1.2, 0.6 + player.speedKmh / 500);
+
+    ctx.save();
+    ctx.fillStyle = '#06060c';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(-player.angle - Math.PI / 2);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-player.x, -player.y);
+
+    drawTrack(ctx, race.track);
+    particles.draw(ctx);
+
+    const sorted = [...race.vehicles].sort((a, b) => a.y - b.y);
+    for(const v of sorted) v.draw(ctx);
+
+    ctx.restore();
+
+    const pos = race.getPlayerPosition();
+    document.getElementById('hud-pos').textContent = pos + 'º';
+    document.getElementById('hud-lap').textContent = `VUELTA ${Math.min(race.player.progress.lap + 1, race.laps)}/${race.laps}`;
+    document.getElementById('hud-wrongway').classList.toggle('show', race.player.progress.wrongWay);
+
+    const m = Math.floor(race.elapsed / 60);
+    const s = Math.floor(race.elapsed % 60);
+    const ms = Math.floor((race.elapsed % 1) * 100);
+    document.getElementById('hud-time').textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(2, '0')}`;
+
+    document.getElementById('hud-speed').textContent = Math.round(race.player.speedKmh);
+    document.getElementById('hud-nitro').style.width = race.player.body.nitroFuel + '%';
+    document.getElementById('hud-damage').style.width = race.player.body.damage + '%';
+
+    // Minimapa: usa la escala/offset precalculados en buildTrack en
+    // lugar de recorrer todos los puntos de la pista cada frame.
+    const mc = document.getElementById('minimap');
+    const mctx = mc.getContext('2d');
+    const track = race.track;
+    const { mapScale: scale, mapOffX: offX, mapOffY: offY } = track;
+
+    mctx.clearRect(0, 0, 150, 150);
+    mctx.save();
+    mctx.strokeStyle = 'rgba(46,242,255,0.7)';
+    mctx.lineWidth = 2.5;
+    mctx.beginPath();
+    track.points.forEach((p, i) => {
+      const x = p.x * scale + offX;
+      const y = p.y * scale + offY;
+      i === 0 ? mctx.moveTo(x, y) : mctx.lineTo(x, y);
+    });
+    mctx.closePath();
+    mctx.stroke();
+
+    for(const v of race.vehicles) {
+      mctx.fillStyle = v.isPlayer ? '#ffe62e' : '#ff2e88';
+      const x = v.x * scale + offX;
+      const y = v.y * scale + offY;
+      mctx.beginPath();
+      mctx.arc(x, y, v.isPlayer ? 5 : 3.5, 0, Math.PI * 2);
+      mctx.fill();
+    }
+    mctx.restore();
+  }
+
+  if(race.state === 'FINISHED' && !ended) {
+    showResults();
+  }
 }
 
 // ---------- INICIO ----------
-showScreen('screen-main');
-audio.setEnabled(SAVE.sound);
-gameLoop();
+(async function init(){
+  SAVE = await loadSave();
+  audio.setEnabled(SAVE.sound);
+  applyTouchControls();
+  showScreen('screen-main');
+  animId = requestAnimationFrame(gameLoop);
 
-console.log('🎮 NEON RUSH - STREET LEGENDS');
-console.log('🏁 Corredores:');
-TUS_CORREDORES.forEach((nombre, i) => console.log(`  ${i+1}. ${nombre}`));
-console.log('🎯 ¡A correr!');
+  console.log('🎮 NEON RUSH - STREET LEGENDS (v3.0, reconstruido)');
+  console.log('🏁 Corredores:');
+  TUS_CORREDORES.forEach((nombre, i) => console.log(`  ${i+1}. ${nombre}`));
+  console.log(hasStorage ? '💾 Guardado persistente activo.' : '⚠️ Sin window.storage: los récords no persistirán entre sesiones.');
+})();
 </script>
 </body>
 </html>

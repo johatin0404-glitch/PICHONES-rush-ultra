@@ -209,6 +209,7 @@ h2{text-align:center;color:#ffe62e;margin-bottom:18px}
 <script>
 // ============================================================
 // NEON RUSH - STREET LEGENDS - CÓDIGO COMPLETO CORREGIDO
+// FIX: Sistema de vueltas y detección de ganador
 // ============================================================
 
 // ---------- TUS CORREDORES ----------
@@ -220,7 +221,7 @@ const TUS_CORREDORES = [
   'JOHASN'
 ];
 
-// ---------- DATOS DE VEHÍCULOS (CORREGIDOS) ----------
+// ---------- DATOS DE VEHÍCULOS ----------
 const VEHICLES = [
   {id:'vortex',name:'Vortex R7',color:'#2ef2ff',stats:{topSpeed:78,acceleration:55,braking:60,grip:55,handling:60,weight:50,power:70,nitro:60,driftAbility:55}},
   {id:'phantom',name:'Phantom GT',color:'#a63bff',stats:{topSpeed:92,acceleration:40,braking:45,grip:40,handling:35,weight:70,power:88,nitro:55,driftAbility:30}},
@@ -245,7 +246,7 @@ const DIFFS=['FÁCIL','NORMAL','DIFÍCIL','EXPERTO','LEYENDA'];
 const RIVALS=[1,2,3,4,5,6,7];
 const LAPS=[1,2,3,5];
 
-// ---------- GUARDADO (CORREGIDO) ----------
+// ---------- GUARDADO ----------
 function loadSave(){
   try {
     const d = localStorage.getItem('neonrush_save');
@@ -295,7 +296,7 @@ function resizeCanvas(){
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
 
-// ---------- AUDIO (CORREGIDO) ----------
+// ---------- AUDIO ----------
 const audio = {
   ctx: null,
   enabled: SAVE.sound,
@@ -411,13 +412,12 @@ const audio = {
   lose() { [400,340,260].forEach((f,i) => this.tone(f, 0.3, 'sawtooth', 0.15, null, i * 0.15)); }
 };
 
-// ---------- PARTÍCULAS (CORREGIDO) ----------
+// ---------- PARTÍCULAS ----------
 const particles = {
   list: [],
   max: 400,
 
   add(p) {
-    // Limpiar partículas muertas
     this.list = this.list.filter(part => part.age < part.life);
     if(this.list.length >= this.max) this.list.shift();
     this.list.push(p);
@@ -491,7 +491,7 @@ const particles = {
   }
 };
 
-// ---------- FÍSICA (CORREGIDA) ----------
+// ---------- FÍSICA ----------
 function statsToPhys(s) {
   return {
     maxSpeed: 260 + s.topSpeed * 5.4,
@@ -537,7 +537,6 @@ function updatePhysics(body, input, dt, surface) {
   const forwardSpeed = body.vx * forward.x + body.vy * forward.y;
   const lateralSpeed = body.vx * right.x + body.vy * right.y;
 
-  // Nitro
   body.nitroActive = input.nitro && body.nitroFuel > 1 && body.damage < 100;
   if(body.nitroActive) {
     body.nitroFuel = Math.max(0, body.nitroFuel - dt * 25);
@@ -545,7 +544,6 @@ function updatePhysics(body, input, dt, surface) {
 
   const maxSpeed = phys.maxSpeed + (body.nitroActive ? phys.nitroMaxSpeedBonus : 0);
 
-  // Aceleración
   let accel = 0;
   if(input.throttle > 0) {
     accel = phys.accelForce * input.throttle * (body.nitroActive ? 1.6 : 1);
@@ -561,12 +559,10 @@ function updatePhysics(body, input, dt, surface) {
   body.vx += forward.x * accel * dt;
   body.vy += forward.y * accel * dt;
 
-  // Resistencia
   const drag = Math.max(0, 1 - dt * 0.35);
   body.vx *= drag;
   body.vy *= drag;
 
-  // Drift
   const wasDrifting = body.isDrifting;
   const movingFast = Math.abs(forwardSpeed) > 60;
   body.isDrifting = input.handbrake && movingFast && body.damage < 100;
@@ -580,7 +576,6 @@ function updatePhysics(body, input, dt, surface) {
   body.vx = forward.x * fSpd + right.x * newLateral;
   body.vy = forward.y * fSpd + right.y * newLateral;
 
-  // Dirección
   const speedMag = Math.hypot(body.vx, body.vy);
   const speedFactor = Math.min(1, 0.25 + speedMag / phys.maxSpeed);
   const directionSign = fSpd < -5 ? -1 : 1;
@@ -588,7 +583,6 @@ function updatePhysics(body, input, dt, surface) {
   if(body.isDrifting) steer *= 1.6;
   body.angle += steer;
 
-  // Limitar velocidad
   const totalSpeed = Math.hypot(body.vx, body.vy);
   if(totalSpeed > maxSpeed * 1.1) {
     const scale = maxSpeed / totalSpeed;
@@ -596,7 +590,6 @@ function updatePhysics(body, input, dt, surface) {
     body.vy *= scale;
   }
 
-  // Puntuación de derrape
   if(body.isDrifting) {
     body.driftDuration += dt;
     body.driftPoints += dt * 15;
@@ -607,12 +600,10 @@ function updatePhysics(body, input, dt, surface) {
     body.driftPoints = 0;
   }
 
-  // Carga pasiva de nitro
   if(!body.isDrifting && speedMag > phys.maxSpeed * 0.75) {
     body.nitroFuel = Math.min(100, body.nitroFuel + dt * 4);
   }
 
-  // Posición
   body.x += body.vx * dt;
   body.y += body.vy * dt;
   body.speed = fSpd;
@@ -692,11 +683,9 @@ class Vehicle {
     ctx.translate(body.x, body.y);
     ctx.rotate(body.angle);
 
-    // Sombra
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.fillRect(-len/2 + 2, -wid/2 + 3, len, wid);
 
-    // Cuerpo
     const grad = ctx.createLinearGradient(-len/2, -wid/2, len/2, wid/2);
     grad.addColorStop(0, this._lightenColor(color, 30));
     grad.addColorStop(0.5, color);
@@ -715,11 +704,9 @@ class Vehicle {
     ctx.fill();
     ctx.stroke();
 
-    // Interior
     ctx.fillStyle = 'rgba(10,10,20,0.75)';
     ctx.fillRect(-4, -wid/2 + 3, 12, wid - 6);
 
-    // Nitro
     if(body.nitroActive) {
       ctx.fillStyle = 'rgba(46,242,255,0.85)';
       ctx.beginPath();
@@ -730,7 +717,6 @@ class Vehicle {
       ctx.fill();
     }
 
-    // Jugador
     if(this.isPlayer) {
       ctx.strokeStyle = 'rgba(255,230,46,0.8)';
       ctx.lineWidth = 2;
@@ -815,7 +801,6 @@ function drawTrack(ctx, track) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
-  // Carretera
   ctx.beginPath();
   points.forEach((p, i) => {
     i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
@@ -825,24 +810,20 @@ function drawTrack(ctx, track) {
   ctx.lineWidth = width;
   ctx.stroke();
 
-  // Borde
   ctx.strokeStyle = 'rgba(46,242,255,0.3)';
   ctx.lineWidth = width + 6;
   ctx.stroke();
 
-  // Superficie
   ctx.strokeStyle = '#26263a';
   ctx.lineWidth = width - 4;
   ctx.stroke();
 
-  // Línea central
   ctx.strokeStyle = 'rgba(255,255,255,0.15)';
   ctx.lineWidth = 3;
   ctx.setLineDash([20, 18]);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Línea de meta
   const start = track.startPoint;
   const next = track.points[1];
   const dx = next.x - start.x;
@@ -862,7 +843,7 @@ function drawTrack(ctx, track) {
   ctx.restore();
 }
 
-// ---------- PROGRESO ----------
+// ---------- PROGRESO (CORREGIDO) ----------
 function createProgress(track) {
   return {
     trackIndexHint: 0,
@@ -873,7 +854,8 @@ function createProgress(track) {
     lapTimes: [],
     currentLapStart: 0,
     totalProgress: 0,
-    wrongWay: false
+    wrongWay: false,
+    checkpointsPassed: 0  // Añadido para contar checkpoints
   };
 }
 
@@ -893,7 +875,6 @@ function updateProgress(track, progress, x, y, elapsed, totalLaps) {
   const distToCurrent = Math.hypot(x - cpPoint.x, y - cpPoint.y);
   const distToPrev = Math.hypot(x - prevCpPoint.x, y - prevCpPoint.y);
   
-  // Si está más cerca del checkpoint anterior, va en dirección incorrecta
   if(distToPrev < distToCurrent && distToPrev < 120) {
     progress.wrongWay = true;
     return progress;
@@ -903,17 +884,26 @@ function updateProgress(track, progress, x, y, elapsed, totalLaps) {
   // Checkpoint
   if(distToCurrent < 150) {
     progress.nextCheckpoint = (progress.nextCheckpoint + 1) % track.checkpoints.length;
+    progress.checkpointsPassed += 1;
 
-    // Vuelta completada
+    // Vuelta completada cuando pasamos el checkpoint 0 (línea de meta)
     if(progress.nextCheckpoint === 0) {
-      const lapTime = elapsed - progress.currentLapStart;
-      progress.lapTimes.push(lapTime);
-      progress.currentLapStart = elapsed;
-      progress.lap += 1;
+      // Verificar que pasó por TODOS los checkpoints
+      if(progress.checkpointsPassed >= track.checkpoints.length) {
+        const lapTime = elapsed - progress.currentLapStart;
+        progress.lapTimes.push(lapTime);
+        progress.currentLapStart = elapsed;
+        progress.lap += 1;
+        progress.checkpointsPassed = 0;
+        progress.totalProgress = progress.lap + arc;
 
-      if(progress.lap >= totalLaps && !progress.finished) {
-        progress.finished = true;
-        progress.finishTime = elapsed;
+        console.log('🏁 Vuelta completada:', progress.lap, 'de', totalLaps);
+
+        if(progress.lap >= totalLaps && !progress.finished) {
+          progress.finished = true;
+          progress.finishTime = elapsed;
+          console.log('🏆 Carrera terminada!');
+        }
       }
     }
   }
@@ -921,7 +911,7 @@ function updateProgress(track, progress, x, y, elapsed, totalLaps) {
   return progress;
 }
 
-// ---------- IA (CORREGIDA) ----------
+// ---------- IA ----------
 function aiInput(vehicle, track, difficulty, dt, rivals) {
   const lookAhead = difficulty === 'FÁCIL' ? 5 : difficulty === 'NORMAL' ? 6 : difficulty === 'DIFÍCIL' ? 7 : difficulty === 'EXPERTO' ? 8 : 9;
   const skill = difficulty === 'FÁCIL' ? 0.55 : difficulty === 'NORMAL' ? 0.7 : difficulty === 'DIFÍCIL' ? 0.82 : difficulty === 'EXPERTO' ? 0.92 : 1.0;
@@ -978,6 +968,8 @@ class RaceManager {
     this.vehicles = [];
     this.standings = [];
     this.player = null;
+    this.raceFinished = false;
+    this.finishTime = 0;
 
     const playerDef = VEHICLES[config.vehicleIndex];
     const start = this.track.startPoint;
@@ -995,7 +987,6 @@ class RaceManager {
     this.vehicles.push(player);
     this.player = player;
 
-    // Rivales
     const numRivals = config.rivals;
     const shuffled = VEHICLES.filter(v => v.id !== playerDef.id).sort(() => Math.random() - 0.5);
     const normal = { x: -Math.sin(startAngle), y: Math.cos(startAngle) };
@@ -1036,7 +1027,6 @@ class RaceManager {
 
     this.elapsed += dt;
 
-    // Actualizar vehículos
     for(const v of this.vehicles) {
       let input;
       if(v.isPlayer) {
@@ -1101,7 +1091,7 @@ class RaceManager {
       updateProgress(this.track, v.progress, v.x, v.y, this.elapsed, this.laps);
     }
 
-    // Clasificación (CORREGIDA)
+    // Clasificación
     const finished = this.vehicles.filter(v => v.progress.finished);
     const racing = this.vehicles.filter(v => !v.progress.finished);
 
@@ -1110,9 +1100,24 @@ class RaceManager {
 
     this.standings = [...finished, ...racing];
 
-    // Fin de carrera
-    if(this.player.progress.finished && this.state !== 'FINISHED') {
-      this.state = 'FINISHED';
+    // Fin de carrera - CORREGIDO
+    if(this.state !== 'FINISHED') {
+      // El jugador terminó
+      if(this.player.progress.finished) {
+        this.state = 'FINISHED';
+        this.finishTime = this.player.progress.finishTime;
+        console.log('🏆 ¡CARRERA TERMINADA! Ganador: Jugador');
+      }
+      
+      // Si todos los vehículos terminaron, también termina
+      const allFinished = this.vehicles.every(v => v.progress.finished);
+      if(allFinished && this.vehicles.length > 0) {
+        this.state = 'FINISHED';
+        if(!this.finishTime) {
+          this.finishTime = this.elapsed;
+        }
+        console.log('🏆 ¡CARRERA TERMINADA! Todos terminaron');
+      }
     }
   }
 
@@ -1323,7 +1328,6 @@ function startRace() {
     laps: LAPS[lapIndex]
   };
 
-  // Limpiar intervalo anterior
   if(countdownInterval) {
     clearInterval(countdownInterval);
     countdownInterval = null;
@@ -1439,7 +1443,7 @@ function showResults() {
   showScreen('screen-results');
 }
 
-// ---------- BUCLE PRINCIPAL (CORREGIDO) ----------
+// ---------- BUCLE PRINCIPAL ----------
 let lastTime = 0;
 
 function gameLoop(time = 0) {
@@ -1453,7 +1457,6 @@ function gameLoop(time = 0) {
     if(!paused && race.state !== 'FINISHED') {
       race.update(dt, input, { grip: 1 });
 
-      // Partículas
       for(const req of race.particlesRequests) {
         if(req.type === 'smoke') {
           for(let i = 0; i < 3; i++) {
@@ -1478,7 +1481,6 @@ function gameLoop(time = 0) {
     }
 
     if(!paused) {
-      // ---------- RENDER ----------
       const player = race.player;
       const zoom = Math.min(1.2, 0.6 + player.speedKmh / 500);
 
@@ -1499,7 +1501,6 @@ function gameLoop(time = 0) {
 
       ctx.restore();
 
-      // ---------- HUD ----------
       const pos = race.getPlayerPosition();
       document.getElementById('hud-pos').textContent = pos + 'º';
       document.getElementById('hud-lap').textContent = `VUELTA ${Math.min(race.player.progress.lap + 1, race.laps)}/${race.laps}`;
@@ -1513,7 +1514,6 @@ function gameLoop(time = 0) {
       document.getElementById('hud-nitro').style.width = race.player.body.nitroFuel + '%';
       document.getElementById('hud-damage').style.width = race.player.body.damage + '%';
 
-      // ---------- MINIMAPA ----------
       const mc = document.getElementById('minimap');
       const mctx = mc.getContext('2d');
       const track = race.track;
@@ -1555,8 +1555,9 @@ function gameLoop(time = 0) {
       mctx.restore();
     }
 
-    // Fin de carrera
+    // Verificar fin de carrera - CORREGIDO
     if(race.state === 'FINISHED' && !ended) {
+      console.log('🏁 Mostrando resultados...');
       showResults();
     }
   }
@@ -1568,6 +1569,11 @@ function gameLoop(time = 0) {
 showScreen('screen-main');
 audio.setEnabled(SAVE.sound);
 gameLoop();
+
+console.log('🎮 NEON RUSH - STREET LEGENDS');
+console.log('🏁 Corredores:');
+TUS_CORREDORES.forEach((nombre, i) => console.log(`  ${i+1}. ${nombre}`));
+console.log('🎯 ¡A correr!');
 </script>
 </body>
 </html>

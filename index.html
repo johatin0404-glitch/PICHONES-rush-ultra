@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>NEON RUSH: STREET LEGENDS</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --neon-cyan: #2ef2ff;
+  --neon-pink: #ff2e88;
+  --neon-yellow: #ffe62e;
+  --neon-purple: #a63bff;
+  --bg-dark: #0a0a14;
+  --text-light: #eaf6ff;
+  --text-dim: #7a8199;
+  --danger: #ff4444;
+}
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-dark);
+  color: var(--text-light);
+  font-family: 'Segoe UI', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+}
+.screen {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.screen.active { display: flex; }
+.hidden { display: none !important; }
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5,5,10,0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  backdrop-filter: blur(8px);
+}
+#countdown-number {
+  font-size: 20vw;
+  font-weight: 900;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 30px var(--neon-cyan);
+}
+.menu-panel {
+  width: min(520px, 92vw);
+  max-height: 92vh;
+  overflow-y: auto;
+  background: rgba(18,18,31,0.95);
+  border: 1px solid rgba(46,242,255,0.25);
+  border-radius: 14px;
+  padding: 32px 28px;
+}
+.logo {
+  text-align: center;
+  font-size: 2.6rem;
+  font-weight: 900;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 20px var(--neon-cyan);
+  margin-bottom: 6px;
+}
+.logo span {
+  display: block;
+  font-size: 1rem;
+  color: var(--neon-pink);
+  text-shadow: 0 0 10px var(--neon-pink);
+}
+.menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 25px 0;
+}
+.menu-btn {
+  background: rgba(46,242,255,0.06);
+  border: 1px solid rgba(46,242,255,0.35);
+  color: var(--text-light);
+  padding: 14px 18px;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  transition: all .15s;
+}
+.menu-btn:hover, .menu-btn:active {
+  background: rgba(46,242,255,0.18);
+  transform: translateY(-1px);
+}
+.menu-btn.primary {
+  background: rgba(255,46,136,0.12);
+  border-color: var(--neon-pink);
+}
+.version-tag {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  margin-top: 12px;
+}
+h2 {
+  text-align: center;
+  color: var(--neon-yellow);
+  margin-bottom: 20px;
+}
+.setup-row { margin-bottom: 14px; }
+.setup-row label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.setup-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.setup-value {
+  flex: 1;
+  text-align: center;
+  font-weight: 700;
+}
+.arrow-btn {
+  background: transparent;
+  color: var(--neon-cyan);
+  font-size: 1.1rem;
+  padding: 4px 12px;
+  border: none;
+  cursor: pointer;
+}
+.vehicle-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 14px;
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+.vehicle-stats .stat-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.vehicle-stats .stat-bar {
+  flex: 1;
+  height: 5px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.vehicle-stats .stat-bar-fill {
+  height: 100%;
+  background: var(--neon-cyan);
+}
+.setup-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+.setup-actions .menu-btn { flex: 1; }
+.records-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+.records-list .record-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+#game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #06060c;
+}
+.hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  font-weight: 700;
+  z-index: 20;
+}
+.hud-top-left {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+}
+.hud-position {
+  font-size: 1.8rem;
+  color: var(--neon-yellow);
+  text-shadow: 0 0 10px rgba(255,230,46,0.6);
+}
+.hud-lap {
+  font-size: 0.9rem;
+  color: var(--text-light);
+  opacity: 0.85;
+}
+.hud-top-right {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+}
+.hud-time {
+  font-size: 1.3rem;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 8px rgba(46,242,255,0.6);
+  font-variant-numeric: tabular-nums;
+}
+.hud-bottom-left {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+}
+#minimap-canvas {
+  background: rgba(5,5,12,0.55);
+  border: 1px solid rgba(46,242,255,0.35);
+  border-radius: 8px;
+  width: 120px;
+  height: 120px;
+}
+.hud-bottom-right {
+  position: absolute;
+  bottom: 14px;
+  right: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 160px;
+}
+.hud-speed {
+  font-size: 1.6rem;
+  color: var(--text-light);
+}
+.hud-speed small { font-size: 0.7rem; color: var(--text-dim); }
+.hud-bar-wrap { width: 100%; }
+.hud-label { font-size: 0.6rem; color: var(--text-dim); text-align: right; }
+.hud-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.hud-bar-fill { height: 100%; width: 0%; }
+.hud-bar-fill.nitro { background: linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); }
+.hud-bar-fill.damage { background: linear-gradient(90deg, #ffcc33, var(--danger)); }
+.pause-btn {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  background: rgba(0,0,0,0.4);
+  color: var(--text-light);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 0.9rem;
+  pointer-events: auto;
+}
+.touch-controls {
+  position: fixed;
+  inset: 0;
+  z-index: 22;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 12px;
+  pointer-events: none;
+}
+.touch-left, .touch-right {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  pointer-events: auto;
+}
+.touch-right { flex-wrap: wrap; max-width: 200px; justify-content: flex-end; }
+.touch-btn {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: rgba(46,242,255,0.15);
+  border: 2px solid rgba(46,242,255,0.5);
+  color: var(--text-light);
+  font-size: 1.3rem;
+  user-select: none;
+  touch-action: none;
+}
+.touch-btn:active { background: rgba(46,242,255,0.4); transform: scale(0.9); }
+.touch-btn.small { width: 50px; height: 50px; font-size: 0.7rem; background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); }
+.touch-btn.accel-btn { background: rgba(46,242,255,0.25); }
+.touch-btn.nitro-btn {
+  background: rgba(166,59,255,0.25);
+  border-color: var(--neon-purple);
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+@media (min-width: 900px) { .touch-controls { display: none !important; } }
+</style>
+</head>
+<body>
+
+<!-- ============ MENÚ PRINCIPAL ============ -->
+<section id="screen-main-menu" class="screen active">
+  <div class="menu-panel">
+    <h1 class="logo">NEON RUSH<span>STREET LEGENDS</span></h1>
+    <nav class="menu-list">
+      <button class="menu-btn" data-action="quick-race">🏁 CARRERA RÁPIDA</button>
+      <button class="menu-btn" data-action="records">🏆 RÉCORDS</button>
+      <button class="menu-btn" data-action="settings">⚙️ CONFIGURACIÓN</button>
+    </nav>
+    <p class="version-tag">v2.0 · Juego completo</p>
+  </div>
+</section>
+
+<!-- ============ CONFIGURACIÓN RÁPIDA ============ -->
+<section id="screen-quick-race" class="screen">
+  <div class="menu-panel setup-panel">
+    <h2>🏁 CARRERA RÁPIDA</h2>
+    <div class="setup-row">
+      <label>🚗 Vehículo</label>
+      <div class="setup-select" id="select-vehicle">
+        <button class="arrow-btn" data-dir="-1">◀</button>
+        <div class="setup-value" id="vehicle-name">Vortex R7</div>
+        <button class="arrow-btn" data-dir="1">▶</button>
+      </div>
+      <div class="vehicle-stats" id="vehicle-stats"></div>
+    </div>
+    <div class="setup-row">
+      <label>🛣️ Pista</label>
+      <div class="setup-select" id="select-track">
+        <button class="arrow-btn" data-dir="-1">◀</button>
+        <div class="setup-value" id="track-name">Circuito Neon City</div>
+        <button class="arrow-btn" data-dir="1">▶</button>
+      </div>
+    </div>
+    <div class="setup-row">
+      <label>🎯 Dificultad</label>
+      <div class="setup-select" id="select-difficulty">
+        <button class="arrow-btn" data-dir="-1">◀</button>
+        <div class="setup-value" id="difficulty-name">NORMAL</div>
+        <button class="arrow-btn" data-dir="1">▶</button>
+      </div>
+    </div>
+    <div class="setup-row">
+      <label>👥 Rivales</label>
+      <div class="setup-select" id="select-rivals">
+        <button class="arrow-btn" data-dir="-1">◀</button>
+        <div class="setup-value" id="rivals-name">5</div>
+        <button class="arrow-btn" data-dir="1">▶</button>
+      </div>
+    </div>
+    <div class="setup-row">
+      <label>🔄 Vueltas</label>
+      <div class="setup-select" id="select-laps">
+        <button class="arrow-btn" data-dir="-1">◀</button>
+        <div class="setup-value" id="laps-name">3</div>
+        <button class="arrow-btn" data-dir="1">▶</button>
+      </div>
+    </div>
+    <div class="setup-actions">
+      <button class="menu-btn" data-action="back-main">VOLVER</button>
+      <button class="menu-btn primary" data-action="start-race">🏁 INICIAR</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ RÉCORDS ============ -->
+<section id="screen-records" class="screen">
+  <div class="menu-panel">
+    <h2>🏆 RÉCORDS</h2>
+    <div id="records-list" class="records-list"></div>
+    <div class="setup-actions">
+      <button class="menu-btn" data-action="back-main">VOLVER</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CONFIGURACIÓN ============ -->
+<section id="screen-settings" class="screen">
+  <div class="menu-panel">
+    <h2>⚙️ CONFIGURACIÓN</h2>
+    <div class="setup-row">
+      <label>🔊 Sonido</label>
+      <div class="setup-select" id="toggle-sound">
+        <button class="arrow-btn" data-dir="-1">◀</button>
+        <div class="setup-value" id="sound-value">ACTIVADO</div>
+        <button class="arrow-btn" data-dir="1">▶</button>
+      </div>
+    </div>
+    <div class="setup-row">
+      <label>📱 Controles táctiles</label>
+      <div class="setup-select" id="toggle-touch">
+        <button class="arrow-btn" data-dir="-1">◀</button>
+        <div class="setup-value" id="touch-value">AUTO</div>
+        <button class="arrow-btn" data-dir="1">▶</button>
+      </div>
+    </div>
+    <div class="setup-actions">
+      <button class="menu-btn" data-action="back-main">VOLVER</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CARRERA ============ -->
+<section id="screen-race" class="screen">
+  <canvas id="game-canvas"></canvas>
+  <div id="countdown-overlay" class="overlay hidden">
+    <div id="countdown-number">3</div>
+  </div>
+  <div id="hud" class="hud hidden">
+    <div class="hud-top-left">
+      <div class="hud-position" id="hud-position">1º</div>
+      <div class="hud-lap" id="hud-lap">VUELTA 1/3</div>
+    </div>
+    <div class="hud-top-right">
+      <div class="hud-time" id="hud-time">00:00.00</div>
+    </div>
+    <div class="hud-bottom-left">
+      <canvas id="minimap-canvas" width="150" height="150"></canvas>
+    </div>
+    <div class="hud-bottom-right">
+      <div class="hud-speed"><span id="hud-speed-value">0</span><small>km/h</small></div>
+      <div class="hud-bar-wrap">
+        <div class="hud-label">NITRO</div>
+        <div class="hud-bar"><div id="hud-nitro-fill" class="hud-bar-fill nitro"></div></div>
+      </div>
+      <div class="hud-bar-wrap">
+        <div class="hud-label">DAÑO</div>
+        <div class="hud-bar"><div id="hud-damage-fill" class="hud-bar-fill damage"></div></div>
+      </div>
+    </div>
+  </div>
+  <div id="touch-controls" class="touch-controls hidden">
+    <div class="touch-left">
+      <button id="btn-left" class="touch-btn">◀</button>
+      <button id="btn-right" class="touch-btn">▶</button>
+    </div>
+    <div class="touch-right">
+      <button id="btn-handbrake" class="touch-btn small">✥</button>
+      <button id="btn-nitro" class="touch-btn nitro-btn">NOS</button>
+      <button id="btn-brake" class="touch-btn">▼</button>
+      <button id="btn-accel" class="touch-btn accel-btn">▲</button>
+    </div>
+  </div>
+  <button id="btn-pause" class="pause-btn hidden">⏸️</button>
+  <div id="pause-menu" class="overlay hidden">
+    <div class="menu-panel">
+      <h2>⏸️ PAUSA</h2>
+      <div class="setup-actions" style="flex-direction:column;">
+        <button class="menu-btn" data-action="resume">▶ CONTINUAR</button>
+        <button class="menu-btn" data-action="restart-race">🔄 REINICIAR</button>
+        <button class="menu-btn" data-action="quit-race">🚪 SALIR</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ RESULTADOS ============ -->
+<section id="screen-results" class="screen">
+  <div class="menu-panel">
+    <h2 id="results-title">🏁 CARRERA FINALIZADA</h2>
+    <div id="results-list" class="records-list"></div>
+    <div class="setup-actions">
+      <button class="menu-btn" data-action="back-main">🏠 MENÚ</button>
+      <button class="menu-btn primary" data-action="retry-race">🔄 REPETIR</button>
+    </div>
+  </div>
+</section>
+
+<script>
+// ============================================================
+// NEON RUSH: STREET LEGENDS - CÓDIGO COMPLETO
+// ============================================================
+
+// ---------- DATOS ----------
+const VEHICLES = [
+  { id: 'vortex_r7', name: 'Vortex R7', color: '#2ef2ff', stats: { topSpeed:78, acceleration:55, braking:60, grip:55, handling:60, weight:50, power:70, nitro:60, driftAbility:55 } },
+  { id: 'phantom_gt', name: 'Phantom GT', color: '#a63bff', stats: { topSpeed:92, acceleration:40, braking:45, grip:40, handling:35, weight:70, power:88, nitro:55, driftAbility:30 } },
+  { id: 'falcon_zx', name: 'Falcon ZX', color: '#ffe62e', stats: { topSpeed:55, acceleration:92, braking:65, grip:60, handling:70, weight:30, power:60, nitro:65, driftAbility:50 } },
+  { id: 'titan_rs', name: 'Titan RS', color: '#ff4444', stats: { topSpeed:70, acceleration:45, braking:80, grip:88, handling:55, weight:85, power:65, nitro:40, driftAbility:25 } },
+  { id: 'eclipse_x', name: 'Eclipse X', color: '#ff2e88', stats: { topSpeed:65, acceleration:60, braking:55, grip:45, handling:92, weight:35, power:55, nitro:70, driftAbility:95 } },
+  { id: 'inferno_r', name: 'Inferno R', color: '#ff6a2e', stats: { topSpeed:85, acceleration:70, braking:50, grip:50, handling:45, weight:60, power:90, nitro:80, driftAbility:40 } },
+  { id: 'specter', name: 'Specter', color: '#8affc1', stats: { topSpeed:60, acceleration:65, braking:90, grip:75, handling:80, weight:40, power:50, nitro:45, driftAbility:60 } },
+  { id: 'venom_s', name: 'Venom S', color: '#39ff6a', stats: { topSpeed:75, acceleration:78, braking:60, grip:65, handling:65, weight:45, power:75, nitro:85, driftAbility:55 } },
+  { id: 'shadow_gt', name: 'Shadow GT', color: '#7d7dff', stats: { topSpeed:80, acceleration:50, braking:55, grip:55, handling:50, weight:55, power:72, nitro:50, driftAbility:45 } },
+  { id: 'tempest_x', name: 'Tempest X', color: '#ffd23f', stats: { topSpeed:68, acceleration:82, braking:70, grip:92, handling:85, weight:38, power:58, nitro:50, driftAbility:70 } }
+];
+const TRACKS = [
+  { id: 'neon_city', name: 'Circuito Neon City', width: 240, build: () => { const pts=[]; for(let i=0;i<120;i++){const t=(i/120)*Math.PI*2; pts.push({x:Math.cos(t)*900, y:Math.sin(t)*600});} return pts; } },
+  { id: 'harbor', name: 'Muelle del Puerto', width: 210, build: () => { const pts=[]; for(let i=0;i<120;i++){const t=(i/120)*Math.PI*2; pts.push({x:Math.cos(t)*1100, y:Math.sin(t)*400});} return pts; } },
+  { id: 'desert', name: 'Cruce Desértico', width: 260, build: () => { const pts=[]; for(let i=0;i<140;i++){const t=(i/140)*Math.PI*2; pts.push({x:Math.sin(t)*950, y:Math.sin(t)*Math.cos(t)*850});} return pts; } }
+];
+const DIFFICULTIES = ['FÁCIL', 'NORMAL', 'DIFÍCIL', 'EXPERTO', 'LEYENDA'];
+const RIVAL_COUNTS = [1,2,3,4,5,6,7];
+const LAP_COUNTS = [1,2,3,5];
+const PERSONALITIES = ['AGGRESSIVE','DEFENSIVE','BALANCED','RECKLESS','TECHNICAL'];
+const RIVAL_NAMES = ['Shadow','Raven','Blaze','Viper','Phantom','Nova','Reaper','Ghost','Comet','Vex'];
+
+// ---------- SISTEMA DE GUARDADO ----------
+function loadSave() {
+  try {
+    const raw = localStorage.getItem('neonrush_save');
+    if (raw) return JSON.parse(raw);
+  } catch(e) {}
+  return { settings: { sound: true, touch: 'auto' }, records: { bestLapByTrack: {}, bestTopSpeed: 0, bestDrift: 0, mostWins: 0, winStreak: 0 } };
+}
+function writeSave(save) {
+  try { localStorage.setItem('neonrush_save', JSON.stringify(save)); } catch(e) {}
+}
+let saveData = loadSave();
+
+// ---------- ESTADO DEL JUEGO ----------
+const SCREENS = { MAIN_MENU: 'screen-main-menu', QUICK_RACE: 'screen-quick-race', RECORDS: 'screen-records', SETTINGS: 'screen-settings', RACE: 'screen-race', RESULTS: 'screen-results' };
+let currentScreen = SCREENS.MAIN_MENU;
+let race = null;
+let paused = false;
+let raceEndedHandled = false;
+let lastPendingConfig = null;
+let frameId = null;
+let vehicleIndex = 0, trackIndex = 0, diffIndex = 1, rivalIndex = 4, lapIndex = 2;
+
+// ---------- CANVAS ----------
+const canvas = document.getElementById('game-canvas');
+const ctx = canvas.getContext('2d');
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// ---------- AUDIO ----------
+class AudioManager {
+  constructor() {
+    this.ctx = null; this.enabled = true; this.engineOsc = null; this.engineGain = null; this._unlocked = false;
+  }
+  _ensureContext() {
+    if (!this.ctx) { const AC = window.AudioContext || window.webkitAudioContext; this.ctx = new AC(); }
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+  }
+  unlock() { if (this._unlocked) return; this._ensureContext(); this._unlocked = true; }
+  setEnabled(v) { this.enabled = v; if (!v && this.engineGain) this.engineGain.gain.value = 0; }
+  _tone({freq=440,duration=0.15,type='sine',gain=0.15,sweepTo=null,delay=0}) {
+    if (!this.enabled) return;
+    this._ensureContext(); const ctx=this.ctx;
+    const osc=ctx.createOscillator(); const g=ctx.createGain();
+    osc.type=type; osc.frequency.setValueAtTime(freq, ctx.currentTime+delay);
+    if(sweepTo!==null) osc.frequency.linearRampToValueAtTime(sweepTo, ctx.currentTime+delay+duration);
+    g.gain.setValueAtTime(gain, ctx.currentTime+delay);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+delay+duration);
+    osc.connect(g).connect(ctx.destination);
+    osc.start(ctx.currentTime+delay); osc.stop(ctx.currentTime+delay+duration+0.02);
+  }
+  _noiseBurst({duration=0.2,gain=0.12,delay=0,filterFreq=1200}) {
+    if(!this.enabled) return;
+    this._ensureContext(); const ctx=this.ctx;
+    const bufferSize=ctx.sampleRate*duration; const buffer=ctx.createBuffer(1,bufferSize,ctx.sampleRate);
+    const data=buffer.getChannelData(0); for(let i=0;i<bufferSize;i++) data[i]=Math.random()*2-1;
+    const noise=ctx.createBufferSource(); noise.buffer=buffer;
+    const filter=ctx.createBiquadFilter(); filter.type='lowpass'; filter.frequency.value=filterFreq;
+    const g=ctx.createGain(); g.gain.setValueAtTime(gain, ctx.currentTime+delay);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+delay+duration);
+    noise.connect(filter).connect(g).connect(ctx.destination);
+    noise.start(ctx.currentTime+delay);
+  }
+  startEngine() {
+    if(!this.enabled) return;
+    this._ensureContext(); if(this.engineOsc) return;
+    const ctx=this.ctx;
+    this.engineOsc=ctx.createOscillator(); this.engineOsc.type='sawtooth';
+    this.engineGain=ctx.createGain(); this.engineGain.gain.value=0.03;
+    const filter=ctx.createBiquadFilter(); filter.type='lowpass'; filter.frequency.value=500;
+    this.engineOsc.connect(filter).connect(this.engineGain).connect(ctx.destination);
+    this.engineOsc.frequency.value=60; this.engineOsc.start();
+    this._engineFilter=filter;
+  }
+  updateEngine(speedRatio) {
+    if(!this.engineOsc||!this.enabled) return;
+    const freq=55+Math.min(1,Math.abs(speedRatio))*180;
+    this.engineOsc.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.05);
+    if(this._engineFilter) this._engineFilter.frequency.setTargetAtTime(400+Math.abs(speedRatio)*1800, this.ctx.currentTime, 0.05);
+  }
+  stopEngine() { if(this.engineOsc){ try{this.engineOsc.stop();}catch(e){} this.engineOsc.disconnect(); this.engineOsc=null; } }
+  playNitro() { this._tone({freq:220,sweepTo:700,duration:0.4,type:'sawtooth',gain:0.18}); }
+  playDrift() { this._noiseBurst({duration:0.15,gain:0.06,filterFreq:2000}); }
+  playCollision() { this._noiseBurst({duration:0.18,gain:0.2,filterFreq:600}); this._tone({freq:90,duration:0.15,type:'square',gain:0.15}); }
+  playMenuClick() { this._tone({freq:700,duration:0.06,type:'square',gain:0.08}); }
+  playCountdownBeep(isFinal) { this._tone({freq:isFinal?880:440,duration:isFinal?0.3:0.15,type:'sine',gain:0.2}); }
+  playVictory() { [523,659,784,1046].forEach((f,i)=>this._tone({freq:f,duration:0.25,type:'triangle',gain:0.18,delay:i*0.12})); }
+  playDefeat() { [400,340,260].forEach((f,i)=>this._tone({freq:f,duration:0.3,type:'sawtooth',gain:0.15,delay:i*0.15})); }
+}
+const audio = new AudioManager();
+
+// ---------- SISTEMA DE PARTÍCULAS ----------
+class ParticleSystem {
+  constructor() { this.particles=[]; }
+  spawnSmoke(x,y) { this._push({x,y,vx:(Math.random()-0.5)*20,vy:(Math.random()-0.5)*20,life:0.5+Math.random()*0.4,age:0,size:6+Math.random()*6,grow:18,color:'rgba(200,200,210,ALPHA)'}); }
+  spawnNitroFlame(x,y,angle) { const spread=(Math.random()-0.5)*0.6; const speed=140+Math.random()*60; this._push({x,y,vx:Math.cos(angle+Math.PI+spread)*speed,vy:Math.sin(angle+Math.PI+spread)*speed,life:0.25+Math.random()*0.15,age:0,size:4+Math.random()*4,grow:-4,color:Math.random()>0.5?'rgba(46,242,255,ALPHA)':'rgba(166,59,255,ALPHA)'}); }
+  spawnSpark(x,y) { const angle=Math.random()*Math.PI*2; const speed=80+Math.random()*120; this._push({x,y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,life:0.2+Math.random()*0.2,age:0,size:2+Math.random()*2,grow:0,color:'rgba(255,230,46,ALPHA)'}); }
+  _push(p){ if(this.particles.length>=400) this.particles.shift(); this.particles.push(p); }
+  update(dt){ for(let i=this.particles.length-1;i>=0;i--){const p=this.particles[i]; p.age+=dt; if(p.age>=p.life){this.particles.splice(i,1);continue;} p.x+=p.vx*dt; p.y+=p.vy*dt; p
